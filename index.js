@@ -1,6 +1,6 @@
 /**
  * Generates code for a JavaScript expression that evaluates to the provided input value.
- * @param {unknown} input The object to represent.
+ * @param {unknown} input The value to represent.
  * @returns string
  */
 export function repr(input) {
