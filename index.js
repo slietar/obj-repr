@@ -39,6 +39,7 @@ export function repr(input) {
         // ...
       } else {
         for (let key of [...Object.getOwnPropertyNames(obj).sort(sortKeys), ...Object.getOwnPropertySymbols(obj)]) {
+          walk(key);
           walk(obj[key]);
         }
       }
@@ -55,21 +56,15 @@ export function repr(input) {
   let knownObjectNames = new Map();
   let nameIndex = 0;
 
-  let format = (obj, assignment = null) => {
+  let missingValueSentinel = Symbol();
+
+  let format = (obj) => {
     if (knownObjectNames.has(obj)) {
       let name = knownObjectNames.get(obj);
 
-      if (name === null) {
-        knownObjectOccurrences.set(assignment.target, true);
-        circularAssignments.push({
-          assignment,
-          value: obj
-        });
-
-        return JSON.stringify(null);
-      }
-
-      return name;
+      return name !== null
+        ? name
+        : missingValueSentinel;
     }
 
     let value;
@@ -80,13 +75,45 @@ export function repr(input) {
       }
 
       if (Array.isArray(obj)) {
-        value = '[' + obj.map((item, index) => format(item, { mode: 'array', index, target: obj })).join(', ') + ']';
+        value = '[' + obj.map((item, index) => {
+          let formattedItem = format(item);
+
+          if (formattedItem === missingValueSentinel) {
+            knownObjectOccurrences.set(obj, true);
+            circularAssignments.push({
+              mode: 'array',
+              index,
+              target: obj,
+              value: item
+            });
+
+            return JSON.stringify(0);
+          } else {
+            return formattedItem;
+          }
+        }).join(', ') + ']';
       } else if (ArrayBuffer.isView(obj)) {
         value = `new ${obj.constructor.name}(Uint8Array.from(atob('${Buffer.from(obj.buffer).toString('base64')}'), (c) => c.charCodeAt(0)).buffer)`;
       } else {
         switch (obj.constructor) {
           case Set:
-            value = `new Set([${Array.from(obj).map((item) => format(item)).join(', ')}])`;
+            value = `new Set([${Array.from(obj).flatMap((item) => {
+              let formattedItem = format(item, { mode: 'set', target: obj });
+
+              if (formattedItem === missingValueSentinel) {
+                knownObjectOccurrences.set(obj, true);
+                circularAssignments.push({
+                  mode: 'set',
+                  target: obj,
+                  value: item
+                });
+
+                return [];
+              } else {
+                return [formattedItem];
+              }
+            }).join(', ')}])`;
+
             break;
           case ArrayBuffer:
             value = `Uint8Array.from(atob('${Buffer.from(obj).toString('base64')}'), (c) => c.charCodeAt(0)).buffer`;
@@ -102,9 +129,24 @@ export function repr(input) {
             break;
           case Object:
           case null:
-            value = '{ ' + [...Object.getOwnPropertyNames(obj).sort(sortKeys), ...Object.getOwnPropertySymbols(obj)].map((key) =>
-              `[${format(key)}]: ${format(obj[key], { mode: 'object', key, target: obj })}`
-            ).join(', ') + ' }';
+            value = '{ ' + [...Object.getOwnPropertyNames(obj).sort(sortKeys), ...Object.getOwnPropertySymbols(obj)].flatMap((key) => {
+              let formattedKey = format(key);
+              let formattedValue = format(obj[key]);
+
+              if (formattedValue === missingValueSentinel) {
+                knownObjectOccurrences.set(obj, true);
+                circularAssignments.push({
+                  mode: 'object',
+                  key: formattedKey,
+                  target: obj,
+                  value: obj[key]
+                });
+
+                return [];
+              } else {
+                return [`[${formattedKey}]: ${formattedValue}`];
+              }
+            }).join(', ') + ' }';
 
             break;
         }
@@ -132,17 +174,19 @@ export function repr(input) {
 
   let output = `(() => { let ${rootName} = {}; let b = ${format(input)}; `;
 
-  for (let { assignment, value } of circularAssignments) {
+  for (let assignment of circularAssignments) {
     let targetName = knownObjectNames.get(assignment.target);
-    let valueName = knownObjectNames.get(value);
+    let valueName = knownObjectNames.get(assignment.value);
 
     switch (assignment.mode) {
       case 'array':
         output += `${targetName}[${assignment.index}] = ${valueName}; `;
         break;
       case 'object':
-        output += `${targetName}.${assignment.key} = ${valueName}; `;
+        output += `${targetName}[${assignment.key}] = ${valueName}; `;
         break;
+      case 'set':
+        output += `${targetName}.add(${valueName}); `;
     }
   }
 
@@ -153,17 +197,28 @@ export function repr(input) {
 export default repr;
 
 
-let s = Symbol('foo');
-
 let v = new Set();
-v.add(v);
+let s = Symbol('f');
+// let w = {
+//   a: 'b'
+// };
+// w[s] = w;
+
+// let w = [3, 4];
+// w.push(w);
+// w.push(w);
+
+v.add({ v });
+
+// v.add(v);
 
 let r = repr({
-  foo: 'bar',
-  p: [s, s, Symbol()],
-  [s]: 42,
-  ['foo bar']: 53,
-  // v
+  // foo: 'bar',
+  // p: [s, s, Symbol()],
+  // [s]: 42,
+  // ['foo bar']: 53,
+  v,
+  // w,
 });
 
 console.log(r);
