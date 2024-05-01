@@ -4,6 +4,10 @@
  * @returns string
  */
 export function repr(input) {
+  function sortKeys(a, b) {
+    return a.localeCompare(b);
+  }
+
   let knownObjectOccurrences = new Map();
 
   let walk = (obj) => {
@@ -34,8 +38,8 @@ export function repr(input) {
       } else if (obj.constructor === URL) {
         // ...
       } else {
-        for (let [key, value] of Object.entries(obj).sort(([a, _a], [b, _b]) => a.localeCompare(b))) {
-          walk(value);
+        for (let key of [...Object.getOwnPropertyNames(obj).sort(sortKeys), ...Object.getOwnPropertySymbols(obj)]) {
+          walk(obj[key]);
         }
       }
     } else if (typeof obj === 'symbol') {
@@ -77,20 +81,33 @@ export function repr(input) {
 
       if (Array.isArray(obj)) {
         value = '[' + obj.map((item, index) => format(item, { mode: 'array', index, target: obj })).join(', ') + ']';
-      } else if (obj.constructor === Set) {
-        value = `new Set([${Array.from(obj).map((item) => format(item)).join(', ')}])`;
-      } else if (obj.constructor === ArrayBuffer) {
-        value = `Uint8Array.from(atob('${Buffer.from(obj).toString('base64')}'), (c) => c.charCodeAt(0)).buffer`;
       } else if (ArrayBuffer.isView(obj)) {
         value = `new ${obj.constructor.name}(Uint8Array.from(atob('${Buffer.from(obj.buffer).toString('base64')}'), (c) => c.charCodeAt(0)).buffer)`;
-      } else if (obj.constructor === Date) {
-        value = `new Date(${obj.getTime()})`;
-      } else if (obj.constructor === RegExp) {
-        value = obj.toString();
-      } else if (obj.constructor === URL) {
-        value = `new URL('${obj.href}')`;
       } else {
-        value = '{ ' + Object.entries(obj).sort(([a, _a], [b, _b]) => a.localeCompare(b)).map(([key, value]) => `${key}: ${format(value, { mode: 'object', key, target: obj })}`).join(', ') + ' }';
+        switch (obj.constructor) {
+          case Set:
+            value = `new Set([${Array.from(obj).map((item) => format(item)).join(', ')}])`;
+            break;
+          case ArrayBuffer:
+            value = `Uint8Array.from(atob('${Buffer.from(obj).toString('base64')}'), (c) => c.charCodeAt(0)).buffer`;
+            break;
+          case Date:
+            value = `new Date(${obj.getTime()})`;
+            break;
+          case RegExp:
+            value = obj.toString();
+            break;
+          case URL:
+            value = `new URL('${obj.href}')`;
+            break;
+          case Object:
+          case null:
+            value = '{ ' + [...Object.getOwnPropertyNames(obj).sort(sortKeys), ...Object.getOwnPropertySymbols(obj)].map((key) =>
+              `[${format(key)}]: ${format(obj[key], { mode: 'object', key, target: obj })}`
+            ).join(', ') + ' }';
+
+            break;
+        }
       }
     } else if (typeof obj === 'number') {
       value = obj.toString();
@@ -138,10 +155,15 @@ export default repr;
 
 let s = Symbol('foo');
 
+let v = new Set();
+v.add(v);
+
 let r = repr({
   foo: 'bar',
   p: [s, s, Symbol()],
-  [s]: 42
+  [s]: 42,
+  ['foo bar']: 53,
+  // v
 });
 
 console.log(r);
