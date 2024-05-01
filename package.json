@@ -1,6 +1,6 @@
 {
   "name": "obj-repr",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Package which generates code for a JavaScript expression that evaluates to the provided input value",
   "main": "index.js",
   "type": "module",
