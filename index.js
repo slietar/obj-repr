@@ -9,38 +9,36 @@ export function repr(input) {
   }
 
   let knownObjectOccurrences = new Map();
+  let stack = [input];
 
-  let walk = (obj) => {
+  while (stack.length > 0) {
+    let obj = stack.shift();
+
     if ((typeof obj === 'object') && (obj !== null)) {
       let presentTwice = knownObjectOccurrences.has(obj);
       knownObjectOccurrences.set(obj, presentTwice);
 
       if (presentTwice) {
-        return;
+        continue;
       }
 
       if (Array.isArray(obj)) {
         for (let item of obj) {
-          walk(item);
+          stack.unshift(item);
+        }
+      } else if (obj.constructor === Map) {
+        for (let [key, value] of obj) {
+          stack.unshift(key);
+          stack.unshift(value);
         }
       } else if (obj.constructor === Set) {
         for (let item of obj) {
-          walk(item);
+          stack.unshift(item);
         }
-      } else if (obj.constructor === ArrayBuffer) {
-        // ...
-      } else if (ArrayBuffer.isView(obj)) {
-        // ...
-      } else if (obj.constructor === Date) {
-        // ...
-      } else if (obj.constructor === RegExp) {
-        // ...
-      } else if (obj.constructor === URL) {
-        // ...
-      } else {
+      } else if ((obj.constructor === Object) || (obj.constructor === null)) {
         for (let key of [...Object.getOwnPropertyNames(obj).sort(sortKeys), ...Object.getOwnPropertySymbols(obj)]) {
-          walk(key);
-          walk(obj[key]);
+          stack.unshift(key);
+          stack.unshift(obj[key]);
         }
       }
     } else if (typeof obj === 'symbol') {
@@ -48,8 +46,6 @@ export function repr(input) {
       knownObjectOccurrences.set(obj, presentTwice);
     }
   };
-
-  walk(input);
 
   let rootName = 'a';
   let circularAssignments = [];
@@ -96,6 +92,27 @@ export function repr(input) {
         value = `new ${obj.constructor.name}(Uint8Array.from(atob('${Buffer.from(obj.buffer).toString('base64')}'), (c) => c.charCodeAt(0)).buffer)`;
       } else {
         switch (obj.constructor) {
+          case Map:
+            value = `new Map([${Array.from(obj).flatMap(([key, value]) => {
+              let formattedKey = format(key);
+              let formattedValue = format(value);
+
+              if ((formattedKey === missingValueSentinel) || (formattedValue === missingValueSentinel)) {
+                knownObjectOccurrences.set(obj, true);
+                circularAssignments.push({
+                  mode: 'map',
+                  key,
+                  target: obj,
+                  value
+                });
+
+                return [];
+              } else {
+                return [`[${formattedKey}, ${formattedValue}]`];
+              }
+            }).join(', ')}])`;
+
+            break;
           case Set:
             value = `new Set([${Array.from(obj).flatMap((item) => {
               let formattedItem = format(item, { mode: 'set', target: obj });
@@ -149,6 +166,8 @@ export function repr(input) {
             }).join(', ') + ' }';
 
             break;
+          default:
+            value = JSON.stringify(obj);
         }
       }
     } else if (typeof obj === 'number') {
@@ -185,6 +204,9 @@ export function repr(input) {
       case 'object':
         output += `${targetName}[${assignment.key}] = ${valueName}; `;
         break;
+      case 'map':
+        output += `${targetName}.set(${knownObjectNames.get(assignment.key) ?? assignment.key}, ${valueName ?? assignment.value}); `;
+        break;
       case 'set':
         output += `${targetName}.add(${valueName}); `;
     }
@@ -195,31 +217,3 @@ export function repr(input) {
 }
 
 export default repr;
-
-
-let v = new Set();
-let s = Symbol('f');
-// let w = {
-//   a: 'b'
-// };
-// w[s] = w;
-
-// let w = [3, 4];
-// w.push(w);
-// w.push(w);
-
-v.add({ v });
-
-// v.add(v);
-
-let r = repr({
-  // foo: 'bar',
-  // p: [s, s, Symbol()],
-  // [s]: 42,
-  // ['foo bar']: 53,
-  v,
-  // w,
-});
-
-console.log(r);
-console.log(eval(r));

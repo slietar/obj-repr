@@ -1,14 +1,17 @@
 # obj-repr
 
-This library generates code for a JavaScript expression that evaluates to the provided input value, similar to the `repr()` function in Python. Compared to JSON and similar serialization solutions, `obj-repr` has support for the following:
+This package generates code for a JavaScript expression that evaluates to the provided input value, similar to the `repr()` function in Python. Compared to JSON and similar serialization solutions, `obj-repr` has support for the following:
 
 - repeated and circular references
 - typed arrays and `ArrayBuffer`
 - bigints
+- symbols; symbols with a description are recreated using `Symbol.for()`
 - `Map`, `Set`
 - `Date`, `RegExp`, `URL`
 
-Under the hood, `obj-repr` returns code that creates an IIFE which resolves all references and recreates complex functions. It is meant to be used with JavaScript code generators, such as bundlers, when passing data from input options the to output files.
+Under the hood, `obj-repr` returns code that creates an IIFE which resolves all references and recreates complex objects. It is meant to be used with JavaScript code generators, such as bundlers, when passing data from input options to output files.
+
+The output string is guaranteed to be constant for a given input value in the absence of symbols.
 
 
 ## Installation
