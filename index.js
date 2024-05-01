@@ -1,5 +1,5 @@
 /**
- * Generates code for a JavaScript expression that evaluates to the provided input value.
+ * Generate code for a JavaScript expression that evaluates to the provided input value.
  * @param {unknown} input The value to represent.
  * @returns string
  */
@@ -38,6 +38,9 @@ export function repr(input) {
           walk(value);
         }
       }
+    } else if (typeof obj === 'symbol') {
+      let presentTwice = knownObjectOccurrences.has(obj);
+      knownObjectOccurrences.set(obj, presentTwice);
     }
   };
 
@@ -46,31 +49,31 @@ export function repr(input) {
   let rootName = 'a';
   let circularAssignments = [];
   let knownObjectNames = new Map();
-  let index = 0;
+  let nameIndex = 0;
 
   let format = (obj, assignment = null) => {
-    if ((typeof obj === 'object') && (obj !== null)) {
-      if (knownObjectNames.has(obj)) {
-        let name = knownObjectNames.get(obj);
+    if (knownObjectNames.has(obj)) {
+      let name = knownObjectNames.get(obj);
 
-        if (name === null) {
-          knownObjectOccurrences.set(assignment.target, true);
-          circularAssignments.push({
-            assignment,
-            value: obj
-          });
+      if (name === null) {
+        knownObjectOccurrences.set(assignment.target, true);
+        circularAssignments.push({
+          assignment,
+          value: obj
+        });
 
-          return JSON.stringify(null);
-        }
-
-        return name;
+        return JSON.stringify(null);
       }
 
+      return name;
+    }
+
+    let value;
+
+    if ((typeof obj === 'object') && (obj !== null)) {
       if (knownObjectOccurrences.get(obj)) {
         knownObjectNames.set(obj, null);
       }
-
-      let value;
 
       if (Array.isArray(obj)) {
         value = '[' + obj.map((item, index) => format(item, { mode: 'array', index, target: obj })).join(', ') + ']';
@@ -89,21 +92,25 @@ export function repr(input) {
       } else {
         value = '{ ' + Object.entries(obj).sort(([a, _a], [b, _b]) => a.localeCompare(b)).map(([key, value]) => `${key}: ${format(value, { mode: 'object', key, target: obj })}`).join(', ') + ' }';
       }
-
-      if (knownObjectOccurrences.get(obj)) {
-        let name = `${rootName}.a${index++}`;
-        knownObjectNames.set(obj, name);
-        return `(${name} = ${value})`;
-      }
-
-      return value;
     } else if (typeof obj === 'number') {
-      return obj.toString();
+      value = obj.toString();
     } else if (typeof obj === 'bigint') {
-      return obj.toString() + 'n';
+      value = obj.toString() + 'n';
+    } else if (typeof obj === 'symbol') {
+      value = (obj.description !== undefined)
+        ? `Symbol.for(${JSON.stringify(obj.description)})`
+        : 'Symbol()';
     } else {
-      return JSON.stringify(obj);
+      value = JSON.stringify(obj);
     }
+
+    if (knownObjectOccurrences.get(obj)) {
+      let name = `${rootName}.a${nameIndex++}`;
+      knownObjectNames.set(obj, name);
+      return `(${name} = ${value})`;
+    }
+
+    return value;
   };
 
   let output = `(() => { let ${rootName} = {}; let b = ${format(input)}; `;
@@ -127,3 +134,15 @@ export function repr(input) {
 }
 
 export default repr;
+
+
+let s = Symbol('foo');
+
+let r = repr({
+  foo: 'bar',
+  p: [s, s, Symbol()],
+  [s]: 42
+});
+
+console.log(r);
+console.log(eval(r));
